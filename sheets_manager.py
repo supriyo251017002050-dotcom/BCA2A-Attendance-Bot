@@ -40,11 +40,13 @@ class SheetsManager:
     # ── Students ─────────────────────────────────────────────────────────────────
 
     def get_students(self) -> dict[str, str]:
-        """Read students.json and return a dict of {id: name}."""
+        """Read students.json and return a dict of {id: name} sorted numerically by ID."""
         try:
             with open("students.json", "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data.get("students", {})
+                raw = data.get("students", {})
+                # Sort numerically by student ID
+                return dict(sorted(raw.items(), key=lambda x: int(x[0]) if x[0].isdigit() else x[0]))
         except FileNotFoundError:
             logger.warning("students.json not found!")
             return {}
@@ -67,10 +69,11 @@ class SheetsManager:
         return target_date.strftime("%d-%m-%Y")  # e.g. "01-08-2026"
 
     def _get_or_create_sheet(self, target_date: date) -> tuple[gspread.Worksheet, bool]:
-        """Get the daily sheet, creating it if needed. Returns (worksheet, created)."""
+        """Get the daily sheet, creating or syncing it. Returns (worksheet, created)."""
         name = self._day_sheet_name(target_date)
         try:
             ws = self.ss.worksheet(name)
+            self._sync_sheet_students(ws, target_date)
             return ws, False
         except gspread.WorksheetNotFound:
             logger.info(f"Creating new daily sheet: {name}")
@@ -111,13 +114,13 @@ class SheetsManager:
             "horizontalAlignment": "CENTER",
         })
 
-        # Student rows
+        # Student rows (sorted by ID, default empty "")
         if students:
             rows = []
             for i, (sid, name) in enumerate(students.items(), start=1):
                 row = [str(i), sid, name]
-                # Default "A" for all subjects
-                row.extend(["A"] * len(slots))
+                # Default empty "" for all subjects (unmarked)
+                row.extend([""] * len(slots))
                 rows.append(row)
                 
             num_rows = len(rows)
@@ -125,16 +128,53 @@ class SheetsManager:
             row_end = 3 + num_rows
             
             ws.update(f"A{row_start}:{col_end_ltr}{row_end}", rows)
-            
-            # Format subject cells as red
-            if len(slots) > 0:
-                subj_start_ltr = _col_letter(4)
-                ws.format(f"{subj_start_ltr}{row_start}:{col_end_ltr}{row_end}", {
-                    "backgroundColor": COLOR_ABSENT_RED,
-                    "horizontalAlignment": "CENTER",
-                })
 
         logger.info(f"Daily sheet initialized with {len(students)} students and {len(slots)} subjects.")
+
+    def _sync_sheet_students(self, ws: gspread.Worksheet, target_date: date):
+        """Sync existing sheet student names & order with students.json while preserving marked attendance."""
+        try:
+            students = self.get_students()
+            if not students:
+                return
+
+            slots = get_teaching_slots(target_date)
+            num_subjects = len(slots)
+            col_end_ltr = _col_letter(3 + num_subjects)
+
+            # Read existing values
+            all_values = ws.get_all_values()
+            existing_marks = {}
+            if len(all_values) >= 4:
+                for r in all_values[3:]:
+                    if len(r) >= 2:
+                        sid = r[1]
+                        marks = r[3:3+num_subjects] if len(r) > 3 else []
+                        existing_marks[sid] = marks
+
+            # Build updated rows
+            rows = []
+            for i, (sid, name) in enumerate(students.items(), start=1):
+                prev_marks = existing_marks.get(sid, [])
+                # Fill previous marks or blank ""
+                subject_cells = []
+                for j in range(num_subjects):
+                    val = prev_marks[j] if j < len(prev_marks) else ""
+                    # Keep P or A if previously marked, otherwise blank
+                    subject_cells.append(val if val in ("P", "A") else "")
+                
+                row = [str(i), sid, name] + subject_cells
+                rows.append(row)
+
+            # Clear old rows and write fresh sorted roster
+            num_rows = len(rows)
+            row_start = 4
+            row_end = 3 + num_rows
+
+            ws.update(f"A{row_start}:{col_end_ltr}{row_end}", rows)
+            logger.info(f"Synced {num_rows} students in sheet {ws.title}")
+        except Exception as e:
+            logger.error(f"Error syncing sheet students: {e}")
 
     def _student_row(self, ws: gspread.Worksheet, student_id: str) -> int | None:
         """Return the 1-based row index for a student ID in the daily sheet, or None."""
