@@ -149,6 +149,19 @@ class SheetsManager:
             row_end = 3 + num_rows
             
             ws.update(f"A{row_start}:{col_end_ltr}{row_end}", rows)
+            
+            # Apply borders to the entire table
+            try:
+                ws.format(f"A1:{col_end_ltr}{row_end}", {
+                    "borders": {
+                        "top": {"style": "SOLID"},
+                        "bottom": {"style": "SOLID"},
+                        "left": {"style": "SOLID"},
+                        "right": {"style": "SOLID"}
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error applying borders in _init_sheet: {e}")
 
         logger.info(f"Daily sheet initialized with {len(students)} students and {len(slots)} subjects.")
 
@@ -200,6 +213,20 @@ class SheetsManager:
             row_end = 3 + num_rows
 
             ws.update(f"A{row_start}:{col_end_ltr}{row_end}", rows)
+            
+            # Reapply borders in case new students were added
+            try:
+                ws.format(f"A1:{col_end_ltr}{row_end}", {
+                    "borders": {
+                        "top": {"style": "SOLID"},
+                        "bottom": {"style": "SOLID"},
+                        "left": {"style": "SOLID"},
+                        "right": {"style": "SOLID"}
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error applying borders in _sync_sheet_students: {e}")
+                
             logger.info(f"Synced {num_rows} students in sheet {ws.title}")
         except Exception as e:
             logger.error(f"Error syncing sheet students: {e}")
