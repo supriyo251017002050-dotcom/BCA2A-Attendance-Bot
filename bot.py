@@ -18,6 +18,9 @@ Commands:
 import logging
 from datetime import date, datetime
 from functools import wraps
+import time
+import json
+import os
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -26,8 +29,6 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 import config
 from routine import format_schedule_table, get_day_name, get_schedule_for_date
 from sheets_manager import SheetsManager
-import json
-import os
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -57,6 +58,17 @@ SHEET_URL = f"https://docs.google.com/spreadsheets/d/{config.SPREADSHEET_ID}"
 # ─────────────────────────────────────────────────────────────────────────────
 
 AUTH_FILE = "auth.json"
+COOLDOWN_TIMERS = {}
+
+def check_cooldown(uid: int, command: str, cooldown: int) -> int:
+    """Returns the remaining cooldown time, or 0 if allowed."""
+    key = f"{uid}_{command}"
+    last_used = COOLDOWN_TIMERS.get(key, 0)
+    now = time.time()
+    if now - last_used < cooldown:
+        return int(cooldown - (now - last_used))
+    COOLDOWN_TIMERS[key] = now
+    return 0
 
 def load_auth_users() -> set[int]:
     if not os.path.exists(AUTH_FILE):
@@ -263,7 +275,8 @@ async def cmd_present(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"⚠️ `{sid}` — {msg}")
 
     for sid in invalid:
-        lines.append(f"❌ `{sid}` — Invalid ID (must be {config.STUDENT_ID_LENGTH} digits)")
+        clean_sid = sid.replace("`", "").replace("*", "").replace("_", "")
+        lines.append(f"❌ `{clean_sid}` — Invalid ID (must be {config.STUDENT_ID_LENGTH} digits)")
 
     date_str = today.strftime("%d %B %Y  (%A)")
     response = f"📋 *Present marked — {date_str}*\n\n" + "\n".join(lines)
@@ -288,7 +301,8 @@ async def cmd_absent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for sid in context.args:
         sid = _expand_id(sid)
         if not _validate_id(sid):
-            lines.append(f"❌ `{sid}` — Invalid ID (must be {config.STUDENT_ID_LENGTH} digits)")
+            clean_sid = sid.replace("`", "").replace("*", "").replace("_", "")
+            lines.append(f"❌ `{clean_sid}` — Invalid ID (must be {config.STUDENT_ID_LENGTH} digits)")
             continue
         ok, msg = sheets.mark_attendance(sid, today, config.ABSENT_MARK)
         name = sheets.get_student_name(sid) or "Unknown"
@@ -493,6 +507,13 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/sheet — Returns a generated image of today's spreadsheet table."""
     logger.info("CMD_SHEET HAS BEEN CALLED!")
+    
+    uid = update.effective_user.id
+    remaining = check_cooldown(uid, "sheet", 15)
+    if remaining > 0:
+        await update.message.reply_text(f"⏳ Please wait {remaining} seconds before requesting another sheet snapshot.")
+        return
+        
     target_date = date.today()
     wait = await update.message.reply_text("📸 Capturing table screenshot... Please wait.")
 
@@ -521,6 +542,12 @@ async def cmd_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @authorized_only
 async def cmd_backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/backup — Export and download the entire attendance sheet as an Excel file."""
+    uid = update.effective_user.id
+    remaining = check_cooldown(uid, "backup", 30)
+    if remaining > 0:
+        await update.message.reply_text(f"⏳ Please wait {remaining} seconds before requesting another backup.")
+        return
+        
     wait = await update.message.reply_text("⏳ Generating offline Excel backup... Please wait.")
     
     try:
@@ -580,8 +607,9 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sid  = context.args[0].strip()
     name = sheets.get_student_name(sid)
     if name is None:
+        clean_sid = sid.replace("`", "").replace("*", "").replace("_", "")
         await update.message.reply_text(
-            f"❌ Student ID `{sid}` not found.", parse_mode=ParseMode.MARKDOWN
+            f"❌ Student ID `{clean_sid}` not found.", parse_mode=ParseMode.MARKDOWN
         )
         return
 

@@ -23,10 +23,12 @@ AUTHORIZED_USERS: list[int] = list({ADMIN_CHAT_ID} | set(CR_CHAT_IDS)) if ADMIN_
 # ── Authorized Users ──────────────────────────
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", 0))
 
-CR_CREDENTIALS = {
-    "Tushar": "Tushar#@123",
-    "Astha": "Astha#@123"
-}
+import json
+_cr_creds_raw = os.getenv("CR_CREDENTIALS", "{}")
+try:
+    CR_CREDENTIALS = json.loads(_cr_creds_raw)
+except Exception:
+    CR_CREDENTIALS = {}
 
 # ── Google Sheets ─────────────────────────────────────────────────────────────
 SPREADSHEET_ID: str  = os.getenv("SPREADSHEET_ID", "")
