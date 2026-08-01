@@ -195,6 +195,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 `/summary` — Today's full report\n"
         f"📈 `/status` — Quick count of today's attendance\n"
         f"📸 `/sheet` — Get image of today's sheet\n"
+        f"💾 `/backup` — Download full Excel backup\n"
         f"🔄 `/reset` — Reset today's attendance table\n"
         f"🧹 `/clear` — Clear chat screen\n"
         f"❓ `/help` — All commands"
@@ -514,6 +515,31 @@ async def cmd_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await wait.edit_text(f"❌ Error sending image: {e}")
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  /backup (Excel export)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@authorized_only
+async def cmd_backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/backup — Export and download the entire attendance sheet as an Excel file."""
+    wait = await update.message.reply_text("⏳ Generating offline Excel backup... Please wait.")
+    
+    try:
+        excel_bytes = sheets.get_backup_excel()
+        filename = f"BCA2A_Attendance_Backup_{date.today().strftime('%Y-%m-%d')}.xlsx"
+        
+        await context.bot.send_document(
+            chat_id=update.effective_chat.id,
+            document=excel_bytes,
+            filename=filename,
+            caption="💾 *Full Spreadsheet Backup*\n\nHere is your offline Excel backup containing all the data from Google Sheets.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        await wait.delete()
+    except Exception as e:
+        logger.error(f"Error generating backup: {e}")
+        await wait.edit_text(f"❌ Failed to generate backup: {e}")
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  /students
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -601,6 +627,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/summary 01-08-2026` — Summary for a specific date\n"
         "`/status` — Quick count of today's present/absent students\n"
         "`/sheet` — Get an image screenshot of today's table\n"
+        "`/backup` — Download full Excel backup of all data\n"
         "`/reset` — Clear today's table if you made a mistake\n"
         "`/report 251017002050` — Full history for one student\n"
         "`/students` — List all students\n\n"
@@ -652,6 +679,7 @@ def main():
     app.add_handler(CommandHandler("summary",  cmd_summary))
     app.add_handler(CommandHandler("status",   cmd_status))
     app.add_handler(CommandHandler("sheet",    cmd_sheet))
+    app.add_handler(CommandHandler("backup",   cmd_backup))
     app.add_handler(CommandHandler("reset",    cmd_reset))
     app.add_handler(CommandHandler("students", cmd_students))
     app.add_handler(CommandHandler("report",   cmd_report))

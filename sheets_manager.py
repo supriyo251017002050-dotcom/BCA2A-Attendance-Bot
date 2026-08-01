@@ -447,3 +447,8 @@ class SheetsManager:
             logger.error(f'generate_sheet_image error: {e}')
             return None
 
+    def get_backup_excel(self) -> bytes:
+        """Export the entire spreadsheet as an Excel file (bytes)."""
+        from gspread.utils import ExportFormat
+        return self.ss.export(ExportFormat.EXCEL)
+
