@@ -426,6 +426,13 @@ class SheetsManager:
             fig, ax = plt.subplots(figsize=(fig_width, fig_height))
             ax.axis('tight')
             ax.axis('off')
+            
+            # Extract Date and Day for the title
+            date_val = data[1][0] if len(data) > 1 and len(data[1]) > 0 else ""
+            day_val = data[1][1] if len(data) > 1 and len(data[1]) > 1 else ""
+            title_str = f"DATE: {date_val}    |    DAY: {day_val}"
+            ax.set_title(title_str, fontweight="bold", fontsize=14, pad=20)
+            
             table = ax.table(cellText=df.values, colLabels=df.columns, loc='center', cellLoc='center')
             table.auto_set_font_size(False)
             table.set_fontsize(10)
