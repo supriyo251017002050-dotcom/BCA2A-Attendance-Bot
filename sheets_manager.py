@@ -165,6 +165,13 @@ class SheetsManager:
 
             # Read existing values
             all_values = ws.get_all_values()
+            
+            # If the sheet is empty or headers are missing (e.g., user cleared it manually)
+            if len(all_values) < 3:
+                ws.clear()
+                self._init_sheet(ws, target_date)
+                return
+                
             existing_marks = {}
             if len(all_values) >= 4:
                 for r in all_values[3:]:
