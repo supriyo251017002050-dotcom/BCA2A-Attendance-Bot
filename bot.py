@@ -195,6 +195,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 `/summary` — Today's full report\n"
         f"📈 `/status` — Quick count of today's attendance\n"
         f"📸 `/sheet` — Get image of today's sheet\n"
+        f"🔄 `/reset` — Reset today's attendance table\n"
         f"🧹 `/clear` — Clear chat screen\n"
         f"❓ `/help` — All commands"
         f"{setup_note}"
@@ -298,6 +299,39 @@ async def cmd_absent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     date_str = today.strftime("%d %B %Y  (%A)")
     response = f"📋 *Absent marked — {date_str}*\n\n" + "\n".join(lines)
     await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  /reset
+# ─────────────────────────────────────────────────────────────────────────────
+
+@authorized_only
+async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/reset [DD-MM-YYYY | today]"""
+    if not context.args:
+        target_date = date.today()
+    else:
+        target_date = _parse_date(context.args[0])
+        if target_date is None:
+            await update.message.reply_text(
+                "❌ Invalid date format.\n"
+                "Use: `/reset 01-08-2026` or `/reset today`",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+
+    wait = await update.message.reply_text(f"⏳ Resetting table for {target_date.strftime('%d %B %Y')}...")
+    ok, msg = sheets.reset_attendance(target_date)
+    
+    if ok:
+        await wait.edit_text(
+            f"🔄 *Table Reset Successful!*\n"
+            f"All attendance marks for {target_date.strftime('%d %B %Y')} have been cleared.\n"
+            f"You can now use `/present` or `/absent` to start over.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await wait.edit_text(f"❌ *Reset Failed*\n{msg}", parse_mode=ParseMode.MARKDOWN)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -567,6 +601,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/summary 01-08-2026` — Summary for a specific date\n"
         "`/status` — Quick count of today's present/absent students\n"
         "`/sheet` — Get an image screenshot of today's table\n"
+        "`/reset` — Clear today's table if you made a mistake\n"
         "`/report 251017002050` — Full history for one student\n"
         "`/students` — List all students\n\n"
         "*⚙️ Other:*\n"
@@ -617,6 +652,7 @@ def main():
     app.add_handler(CommandHandler("summary",  cmd_summary))
     app.add_handler(CommandHandler("status",   cmd_status))
     app.add_handler(CommandHandler("sheet",    cmd_sheet))
+    app.add_handler(CommandHandler("reset",    cmd_reset))
     app.add_handler(CommandHandler("students", cmd_students))
     app.add_handler(CommandHandler("report",   cmd_report))
     app.add_handler(CommandHandler("clear",    cmd_clear))

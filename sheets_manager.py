@@ -236,6 +236,42 @@ class SheetsManager:
             logger.error(f"mark_attendance error: {e}")
             return False, str(e)
 
+    def reset_attendance(self, target_date: date) -> tuple[bool, str]:
+        """Clear all attendance marks for the given date's sheet."""
+        try:
+            ws, created = self._get_or_create_sheet(target_date)
+            headers = ws.row_values(3)
+            num_subjects = len(headers) - 3
+            if num_subjects <= 0:
+                return False, "No subjects scheduled for this day."
+                
+            students = self.get_students()
+            if not students:
+                return False, "No students found."
+                
+            num_students = len(students)
+            col_start_ltr = _col_letter(4)
+            col_end_ltr = _col_letter(3 + num_subjects)
+            row_start = 4
+            row_end = 3 + num_students
+            
+            # Create a 2D array of empty strings
+            marks = [[""] * num_subjects for _ in range(num_students)]
+            ws.update(f"{col_start_ltr}{row_start}:{col_end_ltr}{row_end}", marks)
+            
+            # Reset format to white background
+            ws.format(f"{col_start_ltr}{row_start}:{col_end_ltr}{row_end}", {
+                "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                "horizontalAlignment": "CENTER",
+            })
+            
+            logger.info(f"Reset attendance table for {target_date}")
+            return True, "Table reset successfully."
+            
+        except Exception as e:
+            logger.error(f"reset_attendance error: {e}")
+            return False, str(e)
+
     def get_day_summary(self, target_date: date) -> dict | None:
         """
         Return a dict with present/absent lists for a given date.
