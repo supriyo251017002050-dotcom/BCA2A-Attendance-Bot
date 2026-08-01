@@ -107,6 +107,27 @@ class SheetsManager:
         num_cols = len(headers)
         col_end_ltr = _col_letter(num_cols)
         
+        # Format and merge top headers (Row 1 & 2)
+        if num_cols > 1:
+            try:
+                ws.merge_cells(f"B1:{col_end_ltr}1")
+                ws.merge_cells(f"B2:{col_end_ltr}2")
+                
+                ws.format(f"A1:A2", {
+                    "textFormat": {"bold": True, "fontSize": 11},
+                    "horizontalAlignment": "CENTER",
+                    "verticalAlignment": "MIDDLE",
+                    "backgroundColor": COLOR_DATE_YELLOW
+                })
+                ws.format(f"B1:{col_end_ltr}2", {
+                    "textFormat": {"bold": True, "fontSize": 12},
+                    "horizontalAlignment": "CENTER",
+                    "verticalAlignment": "MIDDLE",
+                    "backgroundColor": COLOR_DATE_YELLOW
+                })
+            except Exception as e:
+                logger.error(f"Error formatting top headers: {e}")
+        
         ws.update(f"A3:{col_end_ltr}3", [headers])
         ws.format(f"A3:{col_end_ltr}3", {
             "textFormat": {"bold": True, "fontSize": 10},
