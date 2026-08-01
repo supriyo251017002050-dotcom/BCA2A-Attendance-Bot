@@ -1,0 +1,14 @@
+app = "bca2a-attendance-bot"
+primary_region = "sin"
+
+[build]
+
+[env]
+  CREDENTIALS_FILE = "credentials.json"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+
+[processes]
+  app = "python bot.py"

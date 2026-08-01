@@ -36,6 +36,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ── Write credentials.json from env var (for cloud hosting like Fly.io) ──────
+_creds_env = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+if _creds_env and not os.path.exists(config.CREDENTIALS_FILE):
+    try:
+        with open(config.CREDENTIALS_FILE, "w") as _f:
+            _f.write(_creds_env)
+        logger.info("credentials.json written from GOOGLE_CREDENTIALS_JSON env var.")
+    except Exception as _e:
+        logger.error(f"Failed to write credentials.json: {_e}")
+
 # ── Sheets client (initialized once) ─────────────────────────────────────────
 sheets = SheetsManager(config.CREDENTIALS_FILE, config.SPREADSHEET_ID)
 
