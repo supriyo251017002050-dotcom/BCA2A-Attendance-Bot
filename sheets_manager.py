@@ -414,37 +414,54 @@ class SheetsManager:
             data = ws.get_all_values()
             if len(data) < 3:
                 return None
-            headers = data[2]
-            rows = data[3:]
-            if not rows:
-                return None
-            df = pd.DataFrame(rows, columns=headers)
+                
+            # Pad all rows to the same length so pandas DataFrame doesn't complain
+            num_cols = max(len(r) for r in data)
+            for r in data:
+                while len(r) < num_cols:
+                    r.append('')
+                    
+            df = pd.DataFrame(data)
             num_rows = len(df)
-            num_cols = len(df.columns)
+            
             fig_width = max(10, num_cols * 1.5)
             fig_height = max(2, num_rows * 0.3)
             fig, ax = plt.subplots(figsize=(fig_width, fig_height))
             ax.axis('tight')
             ax.axis('off')
             
-            # Extract Date and Day for the title
-            date_val = data[1][0] if len(data) > 1 and len(data[1]) > 0 else ""
-            day_val = data[1][1] if len(data) > 1 and len(data[1]) > 1 else ""
-            title_str = f"DATE: {date_val}    |    DAY: {day_val}"
-            ax.set_title(title_str, fontweight="bold", fontsize=14, pad=20)
-            
-            table = ax.table(cellText=df.values, colLabels=df.columns, loc='center', cellLoc='center')
+            # Draw the table with no column headers (they are included in df.values)
+            table = ax.table(cellText=df.values, loc='center', cellLoc='center')
             table.auto_set_font_size(False)
             table.set_fontsize(10)
             table.scale(1, 1.5)
+            
+            # Format rows and cells
             for (row, col), cell in table.get_celld().items():
-                if row == 0:
-                    cell.set_facecolor('#d9ead3')
+                if row in [0, 1]:
+                    # Date & Day header (Yellow)
+                    cell.set_facecolor('#fff2cc')
+                    cell.set_text_props(weight='bold')
+                elif row == 2:
+                    # Column headers (Blue)
+                    cell.set_facecolor('#cfe2f3')
                     cell.set_text_props(weight='bold')
                 elif cell.get_text().get_text() == 'P':
                     cell.set_facecolor('#d9ead3')
                 elif cell.get_text().get_text() == 'A':
                     cell.set_facecolor('#f4cccc')
+                    
+            # Merge logic for Date & Day (Row 0 & 1)
+            for row_idx in [0, 1]:
+                # Hide cells from index 2 onwards
+                for col_idx in range(2, num_cols):
+                    if (row_idx, col_idx) in table.get_celld():
+                        table[row_idx, col_idx].set_visible(False)
+                
+                # Expand column 1 to overlap the hidden cells
+                if (row_idx, 1) in table.get_celld():
+                    merge_cell = table[row_idx, 1]
+                    merge_cell.set_width(merge_cell.get_width() * (num_cols - 1))
             filename = f'sheet_{self._day_sheet_name(target_date)}.png'
             filepath = os.path.join(os.getcwd(), filename)
             plt.savefig(filepath, bbox_inches='tight', dpi=150)
