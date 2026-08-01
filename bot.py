@@ -73,6 +73,13 @@ def save_auth_user(uid: int):
     with open(AUTH_FILE, "w") as f:
         json.dump(list(users), f)
 
+def remove_auth_user(uid: int):
+    users = load_auth_users()
+    if uid in users:
+        users.remove(uid)
+        with open(AUTH_FILE, "w") as f:
+            json.dump(list(users), f)
+
 def authorized_only(func):
     """Allow only admin + authenticated CRs to run a command."""
     @wraps(func)
@@ -116,6 +123,27 @@ async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(
             "❌ *Login Failed*\nIncorrect ID or Password.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+async def cmd_logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/logout — Logout current user."""
+    uid = update.effective_user.id
+    users = load_auth_users()
+    if uid in users:
+        remove_auth_user(uid)
+        await update.message.reply_text(
+            "🚪 *Logged Out Successfully*\nYou have been logged out.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    elif uid == config.ADMIN_CHAT_ID:
+        await update.message.reply_text(
+            "ℹ️ You are the System Admin (configured via `.env`). Admin access cannot be logged out.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            "ℹ️ You are not currently logged in.",
             parse_mode=ParseMode.MARKDOWN
         )
 
@@ -580,6 +608,7 @@ def main():
 
     app.add_handler(CommandHandler("start",    cmd_start))
     app.add_handler(CommandHandler("login",    cmd_login))
+    app.add_handler(CommandHandler("logout",   cmd_logout))
     app.add_handler(CommandHandler("myid",     cmd_myid))
     app.add_handler(CommandHandler("present",  cmd_present))
     app.add_handler(CommandHandler("absent",   cmd_absent))
