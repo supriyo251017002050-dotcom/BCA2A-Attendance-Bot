@@ -451,17 +451,6 @@ class SheetsManager:
                 elif cell.get_text().get_text() == 'A':
                     cell.set_facecolor('#f4cccc')
                     
-            # Merge logic for Date & Day (Row 0 & 1)
-            for row_idx in [0, 1]:
-                # Hide cells from index 2 onwards
-                for col_idx in range(2, num_cols):
-                    if (row_idx, col_idx) in table.get_celld():
-                        table[row_idx, col_idx].set_visible(False)
-                
-                # Expand column 1 to overlap the hidden cells
-                if (row_idx, 1) in table.get_celld():
-                    merge_cell = table[row_idx, 1]
-                    merge_cell.set_width(merge_cell.get_width() * (num_cols - 1))
             filename = f'sheet_{self._day_sheet_name(target_date)}.png'
             filepath = os.path.join(os.getcwd(), filename)
             plt.savefig(filepath, bbox_inches='tight', dpi=150)
