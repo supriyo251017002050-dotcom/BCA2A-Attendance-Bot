@@ -653,13 +653,13 @@ async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = " ".join(context.args)
     wait = await update.message.reply_text("⏳ Thinking...")
 
-    url = "https://agentrouter.org/chat/completions"
+    url = config.AI_API_URL
     headers = {
-        "Authorization": f"Bearer {config.AGENTROUTER_API_KEY}",
+        "Authorization": f"Bearer {config.AI_API_KEY}",
         "Content-Type": "application/json"
     }
     data = {
-        "model": config.AGENTROUTER_MODEL,
+        "model": config.AI_MODEL,
         "messages": [
             {"role": "system", "content": "You are the BCA2A Attendance Bot, a helpful AI assistant for Techno India University students. Keep your answers concise and helpful."},
             {"role": "user", "content": prompt}
@@ -669,11 +669,21 @@ async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=data, timeout=30.0)
-            response.raise_for_status()
-            ai_response = response.json()["choices"][0]["message"]["content"]
+            if response.status_code != 200:
+                logger.error(f"AI API Error Status {response.status_code}: {response.text}")
+                try:
+                    res_json = response.json()
+                    err_msg = res_json.get("error", {}).get("message") if isinstance(res_json.get("error"), dict) else res_json.get("message") or f"HTTP {response.status_code}"
+                except Exception:
+                    err_msg = f"HTTP {response.status_code}"
+                await wait.edit_text(f"❌ AI Error ({response.status_code}): {err_msg}")
+                return
+            
+            res_data = response.json()
+            ai_response = res_data["choices"][0]["message"]["content"]
             await wait.edit_text(ai_response, parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
-        logger.error(f"AI API Error: {e}")
+        logger.error(f"AI Exception: {e}")
         await wait.edit_text("❌ Sorry, I couldn't get a response from the AI at the moment.")
 
 

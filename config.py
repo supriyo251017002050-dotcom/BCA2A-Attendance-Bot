@@ -11,8 +11,11 @@ load_dotenv()
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 
 # ── AI Configuration ────────────────────────────────────────────────────────
-AGENTROUTER_API_KEY: str = os.getenv("AGENTROUTER_API_KEY", "sk-7caoz8cf2RDmS126wnUmqbxZHChEukt8PVtjOuV6RZcNXlXj")
-AGENTROUTER_MODEL: str = os.getenv("AGENTROUTER_MODEL", "claude-opus-4-8")
+AI_API_KEY: str = os.getenv("AI_API_KEY") or os.getenv("AGENTROUTER_API_KEY", "sk-7caoz8cf2RDmS126wnUmqbxZHChEukt8PVtjOuV6RZcNXlXj")
+AI_API_URL: str = os.getenv("AI_API_URL", "https://agentrouter.org/v1/chat/completions")
+AI_MODEL: str = os.getenv("AI_MODEL") or os.getenv("AGENTROUTER_MODEL", "claude-opus-4-8")
+AGENTROUTER_API_KEY: str = AI_API_KEY
+AGENTROUTER_MODEL: str = AI_MODEL
 
 
 ADMIN_CHAT_ID: int = int(os.getenv("ADMIN_CHAT_ID", "0"))
