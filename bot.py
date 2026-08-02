@@ -21,6 +21,7 @@ from functools import wraps
 import time
 import json
 import os
+import httpx
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -637,6 +638,46 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  /ask <prompt> (AI Integration)
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/ask <question> — Ask the AI a question."""
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Please provide a question.\nExample: `/ask Who is this chat bot?`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    prompt = " ".join(context.args)
+    wait = await update.message.reply_text("⏳ Thinking...")
+
+    url = "https://agentrouter.org/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {config.AGENTROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": config.AGENTROUTER_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are the BCA2A Attendance Bot, a helpful AI assistant for Techno India University students. Keep your answers concise and helpful."},
+            {"role": "user", "content": prompt}
+        ]
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=data, timeout=30.0)
+            response.raise_for_status()
+            ai_response = response.json()["choices"][0]["message"]["content"]
+            await wait.edit_text(ai_response, parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        logger.error(f"AI API Error: {e}")
+        await wait.edit_text("❌ Sorry, I couldn't get a response from the AI at the moment.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  /help
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -659,6 +700,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/reset` — Clear today's table if you made a mistake\n"
         "`/report 251017002050` — Full history for one student\n"
         "`/students` — List all students\n\n"
+        "*🤖 AI Assistant:*\n"
+        "`/ask <question>` — Ask the AI anything (e.g. 'Who is this chat bot?')\n\n"
         "*⚙️ Other:*\n"
         "`/myid` — Get your Telegram Chat ID\n"
         "`/clear` — Visually clear the chat screen\n"
@@ -711,6 +754,7 @@ def main():
     app.add_handler(CommandHandler("reset",    cmd_reset))
     app.add_handler(CommandHandler("students", cmd_students))
     app.add_handler(CommandHandler("report",   cmd_report))
+    app.add_handler(CommandHandler("ask",      cmd_ask))
     app.add_handler(CommandHandler("clear",    cmd_clear))
     app.add_handler(CommandHandler("help",     cmd_help))
 

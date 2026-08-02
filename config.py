@@ -10,6 +10,11 @@ load_dotenv()
 # ── Telegram ──────────────────────────────────────────────────────────────────
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 
+# ── AI Configuration ────────────────────────────────────────────────────────
+AGENTROUTER_API_KEY: str = os.getenv("AGENTROUTER_API_KEY", "sk-7caoz8cf2RDmS126wnUmqbxZHChEukt8PVtjOuV6RZcNXlXj")
+AGENTROUTER_MODEL: str = os.getenv("AGENTROUTER_MODEL", "claude-opus-4-8")
+
+
 ADMIN_CHAT_ID: int = int(os.getenv("ADMIN_CHAT_ID", "0"))
 
 _cr_raw = os.getenv("CR_CHAT_IDS", "")
