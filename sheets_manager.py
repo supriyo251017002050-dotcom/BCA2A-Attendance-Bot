@@ -455,7 +455,7 @@ class SheetsManager:
                         "startIndex": 3,
                         "endIndex": 3 + num_subjects
                     },
-                    "properties": {"pixelSize": 180},
+                    "properties": {"pixelSize": 250},
                     "fields": "pixelSize"
                 }
             })

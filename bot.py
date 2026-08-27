@@ -365,7 +365,12 @@ async def handle_attendance_callback(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text("⏳ Saving attendance to Google Sheets...")
         ok, msg = sheets.save_daily_attendance_data(session["date"], session["data"])
         if ok:
-            await query.edit_message_text("✅ *Attendance saved successfully!*\nAll changes synced to Google Sheets.", parse_mode=ParseMode.MARKDOWN)
+            await query.edit_message_text(
+                f"✅ *Attendance saved successfully!*\n"
+                f"All changes synced to Google Sheets.\n\n"
+                f"🔗 [Open Google Sheet to verify/fix]({SHEET_URL})",
+                parse_mode=ParseMode.MARKDOWN
+            )
         else:
             await query.edit_message_text(f"❌ *Failed to save*\n{msg}", parse_mode=ParseMode.MARKDOWN)
         del active_sessions[chat_id]
@@ -603,7 +608,10 @@ async def cmd_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=open(filepath, "rb"),
-            caption=f"📸 *Table Snapshot — {target_date.strftime('%d %B %Y')}*",
+            caption=(
+                f"📸 *Table Snapshot — {target_date.strftime('%d %B %Y')}*\n\n"
+                f"🔗 [Open Google Sheet to manually adjust]({SHEET_URL})"
+            ),
             parse_mode=ParseMode.MARKDOWN
         )
         await wait.delete()
