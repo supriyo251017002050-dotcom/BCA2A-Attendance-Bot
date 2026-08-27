@@ -597,14 +597,18 @@ class SheetsManager:
             df = pd.DataFrame(data)
             num_rows = len(df)
             
-            fig_width = max(10, num_cols * 1.5)
+            fig_width = max(12, num_cols * 2.0)
             fig_height = max(2, num_rows * 0.3)
             fig, ax = plt.subplots(figsize=(fig_width, fig_height))
             ax.axis('tight')
             ax.axis('off')
             
+            # Proportional column widths
+            base_widths = [0.06, 0.15, 0.30] + [0.18] * (num_cols - 3)
+            col_widths = [w / sum(base_widths) for w in base_widths]
+            
             # Draw the table with no column headers (they are included in df.values)
-            table = ax.table(cellText=df.values, loc='center', cellLoc='center')
+            table = ax.table(cellText=df.values, loc='center', cellLoc='center', colWidths=col_widths)
             table.auto_set_font_size(False)
             table.set_fontsize(10)
             table.scale(1, 1.5)
