@@ -606,18 +606,21 @@ class SheetsManager:
             num_rows = len(df)
             num_subj = max(0, num_cols - 3)
             
-            # Make figure wide enough: 3 fixed columns + generous space per subject
-            fig_width = max(14, 6 + num_subj * 3.0)
+            # Tight figure size: just enough for the table content
+            fig_width = max(10, 4 + num_subj * 2.0)
             fig_height = max(4, num_rows * 0.35)
             fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-            ax.axis('tight')
             ax.axis('off')
             
-            # Draw the table — let matplotlib auto-size columns
-            table = ax.table(cellText=df.values, loc='center', cellLoc='center')
+            # Column widths: SI NO narrow, ID medium, Name wide, subjects medium
+            base_widths = [0.04, 0.12, 0.20] + [0.14] * num_subj
+            total = sum(base_widths)
+            col_widths = [w / total for w in base_widths]
+            
+            # Draw the table
+            table = ax.table(cellText=df.values, loc='center', cellLoc='center', colWidths=col_widths)
             table.auto_set_font_size(False)
             table.set_fontsize(9)
-            table.auto_set_column_width(list(range(num_cols)))
             table.scale(1, 1.8)
             
             # Format rows and cells
@@ -641,7 +644,7 @@ class SheetsManager:
                     
             filename = f'sheet_{self._day_sheet_name(target_date)}.png'
             filepath = os.path.join(os.getcwd(), filename)
-            plt.savefig(filepath, bbox_inches='tight', dpi=150, facecolor='white')
+            plt.savefig(filepath, bbox_inches='tight', dpi=150, pad_inches=0.1, facecolor='white')
             plt.close()
             return filepath
         except Exception as e:
