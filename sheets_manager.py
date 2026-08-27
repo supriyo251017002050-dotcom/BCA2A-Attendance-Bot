@@ -133,6 +133,8 @@ class SheetsManager:
             "textFormat": {"bold": True, "fontSize": 10},
             "backgroundColor": COLOR_HEADER_BLUE,
             "horizontalAlignment": "CENTER",
+            "verticalAlignment": "MIDDLE",
+            "wrapStrategy": "WRAP",
         })
 
         # Student rows (sorted by ID, default empty "")
@@ -405,10 +407,77 @@ class SheetsManager:
                 
             ws.update(f"{col_start_ltr}{row_start}:{col_end_ltr}{row_end}", marks_2d)
             
-            # Basic formatting
-            ws.format(f"{col_start_ltr}{row_start}:{col_end_ltr}{row_end}", {
-                "horizontalAlignment": "CENTER",
+            # Formatting request batch
+            requests = []
+            
+            # 1. Header wrap text (in case this sheet was created before we added it to _init_sheet)
+            requests.append({
+                "repeatCell": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": 2,
+                        "endRowIndex": 3,
+                        "startColumnIndex": 3,
+                        "endColumnIndex": 3 + num_subjects
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "wrapStrategy": "WRAP",
+                            "verticalAlignment": "MIDDLE",
+                            "horizontalAlignment": "CENTER",
+                            "textFormat": {"bold": True, "fontSize": 10},
+                            "backgroundColor": COLOR_HEADER_BLUE
+                        }
+                    },
+                    "fields": "userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment,textFormat,backgroundColor)"
+                }
             })
+            
+            # 2. Update Column Widths for Subject columns to comfortably fit text
+            requests.append({
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 3,
+                        "endIndex": 3 + num_subjects
+                    },
+                    "properties": {"pixelSize": 140},
+                    "fields": "pixelSize"
+                }
+            })
+            
+            # 3. Apply colors to individual P/A marks
+            for r_idx, marks in enumerate(marks_2d):
+                for c_idx, mark in enumerate(marks):
+                    if mark == "P":
+                        color = COLOR_PRESENT_GREEN
+                    elif mark == "A":
+                        color = COLOR_ABSENT_RED
+                    else:
+                        color = {"red": 1.0, "green": 1.0, "blue": 1.0} # White
+                        
+                    requests.append({
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": ws.id,
+                                "startRowIndex": 3 + r_idx,
+                                "endRowIndex": 4 + r_idx,
+                                "startColumnIndex": 3 + c_idx,
+                                "endColumnIndex": 4 + c_idx
+                            },
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "backgroundColor": color,
+                                    "horizontalAlignment": "CENTER"
+                                }
+                            },
+                            "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"
+                        }
+                    })
+            
+            # Apply all formatting in one batch update
+            self.ss.batch_update({"requests": requests})
             
             logger.info(f"Saved interactive attendance for {target_date}")
             return True, "Attendance saved successfully."
