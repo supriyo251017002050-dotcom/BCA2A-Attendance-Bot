@@ -581,6 +581,7 @@ class SheetsManager:
         import matplotlib.pyplot as plt
         import pandas as pd
         import os
+        import textwrap
 
         try:
             ws, created = self._get_or_create_sheet(target_date)
@@ -593,36 +594,46 @@ class SheetsManager:
             for r in data:
                 while len(r) < num_cols:
                     r.append('')
+            
+            # Wrap long header text (row index 2, i.e. the 3rd row) into multiple lines
+            if len(data) > 2:
+                for i in range(len(data[2])):
+                    text = data[2][i]
+                    if len(text) > 15:
+                        data[2][i] = '\n'.join(textwrap.wrap(text, width=15))
                     
             df = pd.DataFrame(data)
             num_rows = len(df)
+            num_subj = max(0, num_cols - 3)
             
-            fig_width = max(12, num_cols * 2.0)
-            fig_height = max(2, num_rows * 0.3)
+            # Make figure wide enough: 3 fixed columns + generous space per subject
+            fig_width = max(14, 6 + num_subj * 3.0)
+            fig_height = max(4, num_rows * 0.35)
             fig, ax = plt.subplots(figsize=(fig_width, fig_height))
             ax.axis('tight')
             ax.axis('off')
             
-            # Proportional column widths
-            base_widths = [0.06, 0.15, 0.30] + [0.18] * (num_cols - 3)
-            col_widths = [w / sum(base_widths) for w in base_widths]
-            
-            # Draw the table with no column headers (they are included in df.values)
-            table = ax.table(cellText=df.values, loc='center', cellLoc='center', colWidths=col_widths)
+            # Draw the table — let matplotlib auto-size columns
+            table = ax.table(cellText=df.values, loc='center', cellLoc='center')
             table.auto_set_font_size(False)
-            table.set_fontsize(10)
-            table.scale(1, 1.5)
+            table.set_fontsize(9)
+            table.auto_set_column_width(list(range(num_cols)))
+            table.scale(1, 1.8)
             
             # Format rows and cells
             for (row, col), cell in table.get_celld().items():
+                cell.set_edgecolor('#cccccc')
+                cell.set_linewidth(0.5)
+                
                 if row in [0, 1]:
                     # Date & Day header (Yellow)
                     cell.set_facecolor('#fff2cc')
-                    cell.set_text_props(weight='bold')
+                    cell.set_text_props(weight='bold', fontsize=10)
                 elif row == 2:
                     # Column headers (Blue)
                     cell.set_facecolor('#cfe2f3')
-                    cell.set_text_props(weight='bold')
+                    cell.set_text_props(weight='bold', fontsize=8)
+                    cell.set_height(cell.get_height() * 1.8)
                 elif cell.get_text().get_text() == 'P':
                     cell.set_facecolor('#d9ead3')
                 elif cell.get_text().get_text() == 'A':
@@ -630,7 +641,7 @@ class SheetsManager:
                     
             filename = f'sheet_{self._day_sheet_name(target_date)}.png'
             filepath = os.path.join(os.getcwd(), filename)
-            plt.savefig(filepath, bbox_inches='tight', dpi=150)
+            plt.savefig(filepath, bbox_inches='tight', dpi=150, facecolor='white')
             plt.close()
             return filepath
         except Exception as e:
