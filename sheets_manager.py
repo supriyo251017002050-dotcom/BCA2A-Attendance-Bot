@@ -433,7 +433,20 @@ class SheetsManager:
                 }
             })
             
-            # 2. Update Column Widths for Subject columns to comfortably fit text
+            # 2. Update Column Widths for Student Name (Col C) and Subject columns
+            requests.append({
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 2, # Start at Column C (Student Name)
+                        "endIndex": 3
+                    },
+                    "properties": {"pixelSize": 200}, # Wider for long names
+                    "fields": "pixelSize"
+                }
+            })
+            
             requests.append({
                 "updateDimensionProperties": {
                     "range": {
