@@ -433,30 +433,15 @@ class SheetsManager:
                 }
             })
             
-            # 2. Update Column Widths for Student Name (Col C) and Subject columns
+            # 2. Auto-resize all columns to fit content perfectly (like double-clicking)
             requests.append({
-                "updateDimensionProperties": {
-                    "range": {
+                "autoResizeDimensions": {
+                    "dimensions": {
                         "sheetId": ws.id,
                         "dimension": "COLUMNS",
-                        "startIndex": 2, # Start at Column C (Student Name)
-                        "endIndex": 3
-                    },
-                    "properties": {"pixelSize": 200}, # Wider for long names
-                    "fields": "pixelSize"
-                }
-            })
-            
-            requests.append({
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": ws.id,
-                        "dimension": "COLUMNS",
-                        "startIndex": 3,
+                        "startIndex": 0,
                         "endIndex": 3 + num_subjects
-                    },
-                    "properties": {"pixelSize": 140},
-                    "fields": "pixelSize"
+                    }
                 }
             })
             
