@@ -433,15 +433,30 @@ class SheetsManager:
                 }
             })
             
-            # 2. Auto-resize all columns to fit content perfectly (like double-clicking)
+            # 2a. Auto-resize first 3 columns (SI NO, Student_ID, Student_NAME)
             requests.append({
                 "autoResizeDimensions": {
                     "dimensions": {
                         "sheetId": ws.id,
                         "dimension": "COLUMNS",
                         "startIndex": 0,
-                        "endIndex": 3 + num_subjects
+                        "endIndex": 3
                     }
+                }
+            })
+            
+            # 2b. Subject columns: set a fixed wide pixel size so long subject names
+            #     don't overlap even when wrapStrategy=WRAP is applied to headers
+            requests.append({
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 3,
+                        "endIndex": 3 + num_subjects
+                    },
+                    "properties": {"pixelSize": 180},
+                    "fields": "pixelSize"
                 }
             })
             
