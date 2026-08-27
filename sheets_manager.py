@@ -327,6 +327,95 @@ class SheetsManager:
             logger.error(f"reset_attendance error: {e}")
             return False, str(e)
 
+    def get_daily_attendance_data(self, target_date: date) -> dict | None:
+        """
+        Returns a structured dict of the current day's sheet for interactive editing.
+        Format:
+        {
+            "subjects": ["Math", "Physics", ...],
+            "students": [
+                {"id": "251017002050", "name": "Alice"},
+                ...
+            ],
+            "attendance": {
+                "251017002050": ["P", "", "A", ...],
+                ...
+            }
+        }
+        """
+        try:
+            ws, created = self._get_or_create_sheet(target_date)
+            all_values = ws.get_all_values()
+            
+            if len(all_values) < 3:
+                return None
+                
+            headers = all_values[2]
+            subjects = headers[3:]
+            
+            students = []
+            attendance = {}
+            
+            for row in all_values[3:]:
+                if len(row) >= 2:
+                    sid = row[1]
+                    name = row[2] if len(row) > 2 else "Unknown"
+                    marks = row[3:]
+                    # Pad marks if missing
+                    while len(marks) < len(subjects):
+                        marks.append("")
+                    # Truncate if too many
+                    marks = marks[:len(subjects)]
+                        
+                    students.append({"id": sid, "name": name})
+                    attendance[sid] = marks
+                    
+            return {
+                "subjects": subjects,
+                "students": students,
+                "attendance": attendance
+            }
+        except Exception as e:
+            logger.error(f"get_daily_attendance_data error: {e}")
+            return None
+
+    def save_daily_attendance_data(self, target_date: date, session_data: dict) -> tuple[bool, str]:
+        """
+        Takes the modified attendance dict from Telegram and writes it back to the sheet in one API call.
+        """
+        try:
+            ws, created = self._get_or_create_sheet(target_date)
+            
+            num_subjects = len(session_data["subjects"])
+            num_students = len(session_data["students"])
+            if num_subjects == 0 or num_students == 0:
+                return False, "No data to save."
+                
+            col_start_ltr = _col_letter(4)
+            col_end_ltr = _col_letter(3 + num_subjects)
+            row_start = 4
+            row_end = 3 + num_students
+            
+            # Reconstruct the 2D array of marks matching the row order in session_data["students"]
+            marks_2d = []
+            for student in session_data["students"]:
+                sid = student["id"]
+                marks = session_data["attendance"].get(sid, [""] * num_subjects)
+                marks_2d.append(marks)
+                
+            ws.update(f"{col_start_ltr}{row_start}:{col_end_ltr}{row_end}", marks_2d)
+            
+            # Basic formatting
+            ws.format(f"{col_start_ltr}{row_start}:{col_end_ltr}{row_end}", {
+                "horizontalAlignment": "CENTER",
+            })
+            
+            logger.info(f"Saved interactive attendance for {target_date}")
+            return True, "Attendance saved successfully."
+        except Exception as e:
+            logger.error(f"save_daily_attendance_data error: {e}")
+            return False, str(e)
+
     def get_day_summary(self, target_date: date) -> dict | None:
         """
         Return a dict with present/absent lists for a given date.
@@ -405,6 +494,8 @@ class SheetsManager:
 
 
     def generate_sheet_image(self, target_date: date) -> str | None:
+        import matplotlib
+        matplotlib.use('Agg')
         import matplotlib.pyplot as plt
         import pandas as pd
         import os

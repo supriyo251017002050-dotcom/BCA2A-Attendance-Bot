@@ -23,9 +23,9 @@ import json
 import os
 import httpx
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 import config
 from routine import format_schedule_table, get_day_name, get_schedule_for_date
@@ -52,6 +52,7 @@ if _creds_env and not os.path.exists(config.CREDENTIALS_FILE):
 sheets = SheetsManager(config.CREDENTIALS_FILE, config.SPREADSHEET_ID)
 
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{config.SPREADSHEET_ID}"
+active_sessions = {}  # Tracks user attendance sessions: {chat_id: {"date": date, "data": dict, "current_subject_index": int, "message_id": int}}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -248,73 +249,148 @@ def _validate_id(sid: str) -> bool:
     return sid.isdigit() and len(sid) == config.STUDENT_ID_LENGTH
 
 
+def build_attendance_keyboard(chat_id: int) -> tuple[InlineKeyboardMarkup, str]:
+    session = active_sessions.get(chat_id)
+    if not session:
+        return None, "Session expired."
+    
+    idx = session["current_subject_index"]
+    subjects = session["data"]["subjects"]
+    subject_name = subjects[idx]
+    
+    keyboard = []
+    row = []
+    
+    # Students grid
+    for student in session["data"]["students"]:
+        sid = student["id"]
+        # Last two digits of roll number for the button text
+        short_id = sid[-2:] if len(sid) >= 2 else sid
+        
+        mark = session["data"]["attendance"].get(sid, [""] * len(subjects))[idx]
+        
+        if mark == "P":
+            text = f"✅ {short_id}"
+        elif mark == "A":
+            text = f"❌ {short_id}"
+        else:
+            text = f" {short_id} "
+            
+        row.append(InlineKeyboardButton(text, callback_data=f"att_toggle_{sid}"))
+        
+        if len(row) == 5: # 5 columns per row
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+        
+    # Navigation row
+    nav_row = []
+    if idx > 0:
+        nav_row.append(InlineKeyboardButton("◀️ Prev", callback_data="att_nav_prev"))
+    
+    nav_row.append(InlineKeyboardButton(f"📘 {subject_name}", callback_data="att_ignore"))
+    
+    if idx < len(subjects) - 1:
+        nav_row.append(InlineKeyboardButton("Next ▶️", callback_data="att_nav_next"))
+        
+    keyboard.append(nav_row)
+    
+    # Save button
+    keyboard.append([InlineKeyboardButton("💾 Save to Sheet", callback_data="att_save")])
+    
+    # Add day
+    date_str = session["date"].strftime("%d %B %Y")
+    msg_text = f"📋 *Attendance for {date_str}*\n\n👉 *{subject_name}*\n_Tap a student to toggle status (✅ P, ❌ A, or empty)._"
+    
+    return InlineKeyboardMarkup(keyboard), msg_text
+
 @authorized_only
 async def cmd_present(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/present <id1> <id2> ..."""
-    if not context.args:
-        await update.message.reply_text(
-            "❌ Provide at least one Student ID.\n"
-            "Example: `/present 251017002050 251017002051`",
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return
-
-    today   = date.today()
-    lines   = []
-    invalid = []
-
-    for sid in context.args:
-        sid = _expand_id(sid)
-        if not _validate_id(sid):
-            invalid.append(sid)
-            continue
-        ok, msg = sheets.mark_attendance(sid, today, config.PRESENT_MARK)
-        name = sheets.get_student_name(sid) or "Unknown"
-        if ok:
-            lines.append(f"✅ `{sid}` — {name}")
+    """/present [DD-MM-YYYY]"""
+    # Parse date if provided, else today
+    target_date = date.today()
+    if context.args:
+        parsed = _parse_date(context.args[0])
+        if parsed:
+            target_date = parsed
         else:
-            lines.append(f"⚠️ `{sid}` — {msg}")
+            await update.message.reply_text("❌ Invalid date format. Use DD-MM-YYYY.")
+            return
 
-    for sid in invalid:
-        clean_sid = sid.replace("`", "").replace("*", "").replace("_", "")
-        lines.append(f"❌ `{clean_sid}` — Invalid ID (must be {config.STUDENT_ID_LENGTH} digits)")
-
-    date_str = today.strftime("%d %B %Y  (%A)")
-    response = f"📋 *Present marked — {date_str}*\n\n" + "\n".join(lines)
-    response += f"\n\n📊 [View Sheet]({SHEET_URL})"
-    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
-
+    wait_msg = await update.message.reply_text("⏳ Fetching today's attendance sheet...")
+    
+    data = sheets.get_daily_attendance_data(target_date)
+    if not data or not data["subjects"] or not data["students"]:
+        await wait_msg.edit_text("❌ No subjects or students found for this date. Check `/table` first.", parse_mode=ParseMode.MARKDOWN)
+        return
+        
+    chat_id = update.effective_chat.id
+    active_sessions[chat_id] = {
+        "date": target_date,
+        "data": data,
+        "current_subject_index": 0
+    }
+    
+    markup, text = build_attendance_keyboard(chat_id)
+    await wait_msg.edit_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
 
 @authorized_only
 async def cmd_absent(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/absent <id1> <id2> ..."""
-    if not context.args:
-        await update.message.reply_text(
-            "❌ Provide at least one Student ID.\n"
-            "Example: `/absent 251017002050`",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+    """/absent is deprecated, use /present"""
+    await update.message.reply_text("❌ `/absent` is deprecated. Use `/present` to open the interactive attendance menu.", parse_mode=ParseMode.MARKDOWN)
+
+async def handle_attendance_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    chat_id = update.effective_chat.id
+    if chat_id not in active_sessions:
+        await query.edit_message_text("❌ Session expired. Type /present again.")
         return
-
-    today = date.today()
-    lines = []
-
-    for sid in context.args:
-        sid = _expand_id(sid)
-        if not _validate_id(sid):
-            clean_sid = sid.replace("`", "").replace("*", "").replace("_", "")
-            lines.append(f"❌ `{clean_sid}` — Invalid ID (must be {config.STUDENT_ID_LENGTH} digits)")
-            continue
-        ok, msg = sheets.mark_attendance(sid, today, config.ABSENT_MARK)
-        name = sheets.get_student_name(sid) or "Unknown"
+        
+    session = active_sessions[chat_id]
+    data = query.data
+    
+    if data == "att_ignore":
+        return
+        
+    if data == "att_nav_prev":
+        if session["current_subject_index"] > 0:
+            session["current_subject_index"] -= 1
+    elif data == "att_nav_next":
+        if session["current_subject_index"] < len(session["data"]["subjects"]) - 1:
+            session["current_subject_index"] += 1
+    elif data == "att_save":
+        await query.edit_message_text("⏳ Saving attendance to Google Sheets...")
+        ok, msg = sheets.save_daily_attendance_data(session["date"], session["data"])
         if ok:
-            lines.append(f"🔴 `{sid}` — {name} → Absent")
+            await query.edit_message_text("✅ *Attendance saved successfully!*\nAll changes synced to Google Sheets.", parse_mode=ParseMode.MARKDOWN)
         else:
-            lines.append(f"⚠️ `{sid}` — {msg}")
+            await query.edit_message_text(f"❌ *Failed to save*\n{msg}", parse_mode=ParseMode.MARKDOWN)
+        del active_sessions[chat_id]
+        return
+    elif data.startswith("att_toggle_"):
+        sid = data.split("_")[2]
+        idx = session["current_subject_index"]
+        
+        # Current mark
+        marks = session["data"]["attendance"].get(sid, [""] * len(session["data"]["subjects"]))
+        current = marks[idx]
+        
+        # Toggle: "" -> "P" -> "A" -> ""
+        if current == "":
+            marks[idx] = "P"
+        elif current == "P":
+            marks[idx] = "A"
+        else:
+            marks[idx] = ""
+            
+        session["data"]["attendance"][sid] = marks
 
-    date_str = today.strftime("%d %B %Y  (%A)")
-    response = f"📋 *Absent marked — {date_str}*\n\n" + "\n".join(lines)
-    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+    # Rebuild and update keyboard
+    markup, text = build_attendance_keyboard(chat_id)
+    await query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -767,6 +843,7 @@ def main():
     app.add_handler(CommandHandler("ask",      cmd_ask))
     app.add_handler(CommandHandler("clear",    cmd_clear))
     app.add_handler(CommandHandler("help",     cmd_help))
+    app.add_handler(CallbackQueryHandler(handle_attendance_callback, pattern='^att_'))
 
     logger.info("🤖 BCA2A Attendance Bot is running...")
     if config.ADMIN_CHAT_ID == 0:
