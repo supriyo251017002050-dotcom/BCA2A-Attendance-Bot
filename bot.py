@@ -5,9 +5,9 @@ Techno India University, West Bengal
 
 Commands:
   /start               — Welcome + help
-  /myid                — Show your Telegram Chat ID
-  /present <ids...>    — Mark students Present for today
-  /absent  <ids...>    — Mark students Absent for today
+  /login <ID> <Pass>   — CR login
+  /logout              — CR logout
+  /present [date]      — Interactive class-wise attendance
   /table [date]        — Show day schedule & initialize attendance sheet
   /summary [date]      — Attendance summary for a date
   /students            — List all registered students
@@ -61,6 +61,9 @@ active_sessions = {}  # Tracks user attendance sessions: {chat_id: {"date": date
 
 AUTH_FILE = "auth.json"
 COOLDOWN_TIMERS = {}
+LOGIN_ATTEMPTS = {}  # {uid: (count, first_attempt_time)} — brute-force protection
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_LOCKOUT_SECONDS = 300  # 5-minute lockout after 5 failed attempts
 
 def check_cooldown(uid: int, command: str, cooldown: int) -> int:
     """Returns the remaining cooldown time, or 0 if allowed."""
@@ -118,8 +121,30 @@ def authorized_only(func):
 
 async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/login <id> <password>"""
+    uid = update.effective_user.id
+    
+    # Try to delete the user's message containing the password (security)
+    try:
+        await update.message.delete()
+    except Exception:
+        pass  # Bot may not have delete permission in groups
+    
+    # Brute-force protection
+    if uid in LOGIN_ATTEMPTS:
+        count, first_time = LOGIN_ATTEMPTS[uid]
+        if count >= MAX_LOGIN_ATTEMPTS and (time.time() - first_time) < LOGIN_LOCKOUT_SECONDS:
+            remaining = int(LOGIN_LOCKOUT_SECONDS - (time.time() - first_time))
+            await update.effective_chat.send_message(
+                f"🔒 *Account Locked*\nToo many failed login attempts.\nTry again in {remaining} seconds.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+        # Reset if lockout period has passed
+        if (time.time() - first_time) >= LOGIN_LOCKOUT_SECONDS:
+            LOGIN_ATTEMPTS.pop(uid, None)
+    
     if len(context.args) != 2:
-        await update.message.reply_text(
+        await update.effective_chat.send_message(
             "❌ Invalid format. Use: `/login ID Password`",
             parse_mode=ParseMode.MARKDOWN
         )
@@ -129,16 +154,27 @@ async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     password = context.args[1]
     
     if cr_id in config.CR_CREDENTIALS and config.CR_CREDENTIALS[cr_id] == password:
-        save_auth_user(update.effective_user.id)
-        await update.message.reply_text(
-            f"✅ *Login Successful!*\nWelcome {cr_id}. You can now mark attendance.",
+        save_auth_user(uid)
+        LOGIN_ATTEMPTS.pop(uid, None)  # Clear failed attempts on success
+        await update.effective_chat.send_message(
+            f"✅ *Login Successful!*\nWelcome, {cr_id}. You can now mark attendance.",
             parse_mode=ParseMode.MARKDOWN
         )
+        logger.info(f"CR login successful: {cr_id} (uid={uid})")
     else:
-        await update.message.reply_text(
-            "❌ *Login Failed*\nIncorrect ID or Password.",
+        # Track failed attempt
+        if uid in LOGIN_ATTEMPTS:
+            count, first_time = LOGIN_ATTEMPTS[uid]
+            LOGIN_ATTEMPTS[uid] = (count + 1, first_time)
+        else:
+            LOGIN_ATTEMPTS[uid] = (1, time.time())
+        
+        attempts_left = MAX_LOGIN_ATTEMPTS - LOGIN_ATTEMPTS[uid][0]
+        await update.effective_chat.send_message(
+            f"❌ *Login Failed*\nIncorrect ID or Password.\n_{attempts_left} attempts remaining._",
             parse_mode=ParseMode.MARKDOWN
         )
+        logger.warning(f"Failed login attempt for CR '{cr_id}' by uid={uid}")
 
 async def cmd_logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/logout — Logout current user."""
@@ -202,16 +238,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🏢 {config.COLLEGE_NAME}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"*Quick Commands:*\n"
-        f"📍 `/login ID Password` — Login for CRs\n"
+        f"🔐 `/login ID Password` — Login for CRs\n"
         f"📅 `/table` — Today's schedule\n"
-        f"✅ `/present 251017002050` — Mark present\n"
-        f"❌ `/absent 251017002050` — Mark absent\n"
+        f"✅ `/present` — Interactive attendance marking\n"
         f"📊 `/summary` — Today's full report\n"
-        f"📈 `/status` — Quick count of today's attendance\n"
-        f"📸 `/sheet` — Get image of today's sheet\n"
-        f"💾 `/backup` — Download full Excel backup\n"
-        f"🔄 `/reset` — Reset today's attendance table\n"
-        f"🧹 `/clear` — Clear chat screen\n"
+        f"📈 `/status` — Quick attendance count\n"
+        f"📸 `/sheet` — Screenshot of today's table\n"
+        f"💾 `/backup` — Download Excel backup\n"
         f"❓ `/help` — All commands"
         f"{setup_note}"
     )
@@ -335,16 +368,22 @@ async def cmd_present(update: Update, context: ContextTypes.DEFAULT_TYPE):
     markup, text = build_attendance_keyboard(chat_id)
     await wait_msg.edit_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
 
-@authorized_only
-async def cmd_absent(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/absent is deprecated, use /present"""
-    await update.message.reply_text("❌ `/absent` is deprecated. Use `/present` to open the interactive attendance menu.", parse_mode=ParseMode.MARKDOWN)
+
 
 async def handle_attendance_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     chat_id = update.effective_chat.id
+    uid = update.effective_user.id
+    
+    # Security: only admin or authenticated CRs can interact with callbacks
+    if config.ADMIN_CHAT_ID != 0:
+        auth_users = load_auth_users()
+        if uid != config.ADMIN_CHAT_ID and uid not in auth_users:
+            await query.edit_message_text("⛔ Access denied. Use `/login` first.", parse_mode=ParseMode.MARKDOWN)
+            return
+    
     if chat_id not in active_sessions:
         await query.edit_message_text("❌ Session expired. Type /present again.")
         return
@@ -778,28 +817,28 @@ async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "📚 *BCA2A Attendance Bot — All Commands*\n\n"
+        "*🔐 Authentication:*\n"
+        "`/login ID Password` — Login as a CR\n"
+        "`/logout` — Logout from the bot\n\n"
         "*📌 Schedule:*\n"
         "`/table` — Today's class schedule + init sheet\n"
         "`/table 01-08-2026` — Schedule for a specific date\n\n"
-        "*✅ Marking Attendance:*\n"
-        "`/present 251017002050` — Mark one student present\n"
-        "`/present 001 002 003` — Mark multiple students\n"
-        "`/absent 251017002050` — Mark student absent\n\n"
+        "*✅ Attendance:*\n"
+        "`/present` — Interactive class-wise attendance menu\n"
+        "`/present 01-08-2026` — Attendance for a specific date\n\n"
         "*📊 Reports:*\n"
         "`/summary` — Today's attendance summary\n"
         "`/summary 01-08-2026` — Summary for a specific date\n"
-        "`/status` — Quick count of today's present/absent students\n"
-        "`/sheet` — Get an image screenshot of today's table\n"
-        "`/backup` — Download full Excel backup of all data\n"
-        "`/reset` — Clear today's table if you made a mistake\n"
+        "`/status` — Quick count of present/absent\n"
+        "`/sheet` — Image screenshot of today's table\n"
+        "`/backup` — Download full Excel backup\n"
+        "`/reset` — Clear today's table\n"
         "`/report 251017002050` — Full history for one student\n"
         "`/students` — List all students\n\n"
         "*🤖 AI Assistant:*\n"
-        "`/ask <question>` — Ask the AI anything (e.g. 'Who is this chat bot?')\n\n"
+        "`/ask <question>` — Ask the AI anything\n\n"
         "*⚙️ Other:*\n"
-        "`/myid` — Get your Telegram Chat ID\n"
-        "`/clear` — Visually clear the chat screen\n"
-        "`/start` — Welcome message\n"
+        "`/clear` — Clear chat screen\n"
         "`/help` — Show this help\n\n"
         f"🌐 [Open Google Sheet]({SHEET_URL})\n"
         f"🏛 {config.CLASS_NAME}"
@@ -836,11 +875,8 @@ def main():
     app.add_handler(CommandHandler("start",    cmd_start))
     app.add_handler(CommandHandler("login",    cmd_login))
     app.add_handler(CommandHandler("logout",   cmd_logout))
-    app.add_handler(CommandHandler("myid",     cmd_myid))
     app.add_handler(CommandHandler("present",  cmd_present))
-    app.add_handler(CommandHandler("absent",   cmd_absent))
     app.add_handler(CommandHandler("table",    cmd_table))
-    app.add_handler(CommandHandler("today",    cmd_table))
     app.add_handler(CommandHandler("summary",  cmd_summary))
     app.add_handler(CommandHandler("status",   cmd_status))
     app.add_handler(CommandHandler("sheet",    cmd_sheet))
